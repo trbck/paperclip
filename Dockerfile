@@ -136,7 +136,7 @@ WORKDIR /app
 RUN echo "cli-tools-epoch: ${CLI_TOOLS_CACHE_EPOCH}" \
   && npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai @google/gemini-cli@latest @moonshot-ai/kimi-code@latest \
   && apt-get update \
-  && apt-get install -y --no-install-recommends openssh-client jq build-essential \
+  && apt-get install -y --no-install-recommends bubblewrap openssh-client jq build-essential \
   && npm install --global --omit=dev @tobilu/qmd \
   && apt-get purge -y --auto-remove build-essential \
   && rm -rf /var/lib/apt/lists/* \
