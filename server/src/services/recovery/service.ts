@@ -2876,15 +2876,45 @@ export function recoveryService(
       issueIds: [] as string[],
     };
 
-    for (const issue of candidates) {
-      const executionState = issue.status === "in_review"
-        ? parseIssueExecutionState(issue.executionState)
-        : null;
+    for (const candidate of candidates) {
+      let issue = candidate;
+      const executionState = parseIssueExecutionState(issue.executionState);
       const pendingExecutionState = executionState?.status === "pending" ? executionState : null;
       const currentParticipant = pendingExecutionState
         ? pendingExecutionState.currentParticipant
         : null;
       const participantAgentId = currentParticipant?.type === "agent" ? currentParticipant.agentId : null;
+      const checkedOutReviewStageLostItsRun =
+        issue.status === "in_progress" &&
+        Boolean(participantAgentId) &&
+        issue.assigneeAgentId === participantAgentId &&
+        !issue.checkoutRunId &&
+        !issue.executionRunId;
+      if (checkedOutReviewStageLostItsRun) {
+        const restored = await issuesSvc.update(issue.id, { status: "in_review" });
+        if (!restored) {
+          result.skipped += 1;
+          continue;
+        }
+        await logActivity(db, {
+          companyId: issue.companyId,
+          actorType: "system",
+          actorId: "system",
+          agentId: null,
+          runId: null,
+          action: "issue.updated",
+          entityType: "issue",
+          entityId: issue.id,
+          details: {
+            identifier: issue.identifier,
+            fromStatus: "in_progress",
+            toStatus: "in_review",
+            assigneeAgentId: participantAgentId,
+            source: "recovery.restore_checked_out_review_stage",
+          },
+        });
+        issue = restored;
+      }
       const agentId = issue.status === "in_review" && participantAgentId
         ? participantAgentId
         : issue.assigneeAgentId;
@@ -4037,6 +4067,36 @@ export function recoveryService(
     // Telemetry is best-effort background work; it must not delay clearing
     // the stale lock below, so fire it and do not await it.
     void emitAgentTaskRun(db, updated);
+
+    if (updated.wakeupRequestId) {
+      const wakeupStatus = terminalStatus === "succeeded"
+        ? "completed"
+        : terminalStatus === "cancelled"
+          ? "cancelled"
+          : "failed";
+      try {
+        await db
+          .update(agentWakeupRequests)
+          .set({
+            status: wakeupStatus,
+            finishedAt: updated.finishedAt ?? now,
+            error: terminalStatus === "interrupted" ? message : null,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(agentWakeupRequests.id, updated.wakeupRequestId),
+              inArray(agentWakeupRequests.status, ["queued", "claimed"]),
+            ),
+          );
+      } catch (error) {
+        logger.error(
+          { err: error, runId: run.id, wakeupRequestId: updated.wakeupRequestId },
+          "failed to finalize wakeup after terminalizing orphaned run; run stays terminal and the sweep clears the lock",
+        );
+      }
+    }
+
     runningProcesses.delete(run.id);
     // The run update above already committed the terminal status. The audit
     // event is best-effort: if the insert fails, the caller must still treat
