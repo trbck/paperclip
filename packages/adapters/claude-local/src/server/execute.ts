@@ -75,6 +75,11 @@ import {
   isClaudeModelNotFoundError,
 } from "./parse.js";
 import {
+  activeProviderQuotaCooldown,
+  noteProviderQuota,
+  providerQuotaKey,
+} from "./quota-cooldown.js";
+import {
   materializeRemoteClaudeConfig,
   prepareClaudeConfigSeed,
   resolveManagedClaudeRuntimeStateDir,
@@ -491,6 +496,30 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     ),
   );
   const billingType = resolveClaudeBillingType(effectiveEnv);
+  const quotaKey = providerQuotaKey(effectiveEnv);
+  const quotaCooldownUntil = activeProviderQuotaCooldown(quotaKey);
+  if (quotaCooldownUntil) {
+    const message =
+      `Provider quota cooldown active for ${quotaKey} until ${quotaCooldownUntil.toISOString()}; ` +
+      "run held without calling the provider.";
+    await onLog("stderr", `[paperclip] ${message}\n`);
+    return {
+      exitCode: null,
+      signal: null,
+      timedOut: false,
+      errorMessage: message,
+      errorCode: "provider_quota",
+      errorFamily: "provider_quota",
+      retryNotBefore: quotaCooldownUntil.toISOString(),
+      resultJson: {
+        errorFamily: "provider_quota",
+        quotaCooldownHeld: true,
+        retryNotBefore: quotaCooldownUntil.toISOString(),
+        transientRetryNotBefore: quotaCooldownUntil.toISOString(),
+        providerQuotaRetryNotBefore: quotaCooldownUntil.toISOString(),
+      },
+    };
+  }
   const claudeSkillEntries = await readPaperclipRuntimeSkillEntries(config, __moduleDir);
   const desiredSkillNames = new Set(resolveClaudeDesiredSkillNames(config, claudeSkillEntries));
   // When instructionsFilePath is configured, build a stable content-addressed
@@ -1036,7 +1065,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
           stderr: proc.stderr,
           errorMessage: fallbackErrorMessage,
         });
-      const transientRetryNotBefore = providerQuota || transientUpstream
+      const providerResetAt = providerQuota || transientUpstream
         ? extractClaudeRetryNotBefore({
             parsed: null,
             stdout: proc.stdout,
@@ -1044,6 +1073,9 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
             errorMessage: fallbackErrorMessage,
           })
         : null;
+      const transientRetryNotBefore = providerQuota
+        ? noteProviderQuota(quotaKey, providerResetAt)
+        : providerResetAt;
       const errorCode = proc.errorCode
         // Forward the transport-level error code from the run-disposition seam
         // first, even on the unparsed path. A lost duplex control channel
@@ -1175,7 +1207,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         stderr: proc.stderr,
         errorMessage,
       });
-    const transientRetryNotBefore = providerQuota || transientUpstream
+    const providerResetAt = providerQuota || transientUpstream
       ? extractClaudeRetryNotBefore({
           parsed,
           stdout: proc.stdout,
@@ -1183,6 +1215,9 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
           errorMessage,
         })
       : null;
+    const transientRetryNotBefore = providerQuota
+      ? noteProviderQuota(quotaKey, providerResetAt)
+      : providerResetAt;
     const resolvedErrorCode = proc.errorCode
       // Forward the transport-level error code from the run-disposition seam
       // first. A lost duplex control channel surfaces the typed

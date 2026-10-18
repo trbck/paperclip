@@ -567,3 +567,19 @@ describe("parseClaudeStreamJson usage extraction", () => {
     expect(parsed.usageBasis).toBe("per_run");
   });
 });
+
+describe("Ollama Cloud session usage limit", () => {
+  const ollama429 =
+    "Claude run failed: subtype=success: API Error: Request rejected (429) · you (trbck) have reached your session usage limit, upgrade for higher limits: https://ollama.com/upgrade or add usage credits: https://ollama.com/settings";
+
+  it("classifies it as a provider quota, not a transient blip", () => {
+    expect(isClaudeProviderQuotaError({ errorMessage: ollama429 })).toBe(true);
+    expect(isClaudeTransientUpstreamError({ errorMessage: ollama429 })).toBe(false);
+  });
+
+  it("also covers the weekly variant", () => {
+    expect(
+      isClaudeProviderQuotaError({ errorMessage: "you (x) have reached your weekly usage limit" }),
+    ).toBe(true);
+  });
+});
