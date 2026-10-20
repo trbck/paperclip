@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "mappings": [
+    {
+      "id": "quant-ttengine",
+      "company": {
+        "selector": {
+          "names": ["Quant", "quant"],
+          "issuePrefixes": ["QNT", "QUANT"]
+        }
+      },
+      "project": {
+        "name": "ttengine",
+        "description": "Quant development workspace for the ttengine trading engine repo.",
+        "status": "in_progress",
+        "color": "#0f766e"
+      },
+      "workspace": {
+        "name": "ttengine local repo",
+        "sourceType": "local_path",
+        "cwd": "/home/trbck/workspace/ttengine",
+        "repoUrl": "https://github.com/trbck/ttengine.git",
+        "repoRef": "main",
+        "defaultRef": "main",
+        "sharedWorkspaceKey": "quant/ttengine",
+        "visibility": "default",
+        "isPrimary": true
+      },
+      "gitPolicy": {
+        "baseBranch": "main",
+        "pushPolicy": "feature_branch_only",
+        "branchTemplate": "paperclip/{{issue.identifier}}-{{slug}}",
+        "worktreeParentDir": "/home/trbck/workspace/ttengine/.paperclip/worktrees",
+        "forbidDirectBranches": ["main", "master", "production", "prod"]
+      },
+      "accessPolicy": {
+        "hostRun": "full",
+        "canEditCode": true,
+        "canPushFeatureBranches": true,
+        "canStartServices": true,
+        "canRunDeploymentCommands": true,
+        "notes": [
+          "User explicitly approved full access on 2026-06-19.",
+          "GitHub writes must use feature branches; direct main pushes are out of scope."
+        ]
+      },
+      "hostRuntime": {
+        "env": {
+          "HOME": "/home/trbck",
+          "XDG_CACHE_HOME": "/home/trbck/.cache",
+          "GOCACHE": "/home/trbck/.cache/go-build"
+        }
+      }
+    }
+  ]
+}
